@@ -1,0 +1,14 @@
+{
+  "name": "private-cert-ui",
+  "version": "1.0.0",
+  "description": "Private Root CA Manager - Web UI for managing a private certificate authority",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "dependencies": {
+    "express": "^4.18.0",
+    "node-forge": "^1.3.1"
+  }
+}

@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Private CA Manager</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- Sidebar -->
+    <aside id="sidebar">
+      <div class="sidebar-header">
+        <h1>CA Manager</h1>
+        <button id="newCaBtn" class="btn-primary">+ New CA</button>
+      </div>
+      <div id="caList" class="ca-list">
+        <p class="loading">Loading CAs...</p>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main id="main">
+      <!-- Welcome / empty state -->
+      <div id="welcomeView" class="view">
+        <div class="welcome-card">
+          <h2>Welcome to Private CA Manager</h2>
+          <p>Create a new Certificate Authority or select one from the sidebar to get started.</p>
+          <button id="welcomeNewCaBtn" class="btn-primary">Create Your First CA</button>
+        </div>
+      </div>
+
+      <!-- CA detail view -->
+      <div id="caView" class="view hidden">
+        <div class="view-header">
+          <h2 id="caName">CA Name</h2>
+          <a id="downloadCaCert" class="btn-download" download>Download CA Cert</a>
+        </div>
+        <div id="caMeta" class="meta-card"></div>
+
+        <div class="section-header">
+          <h3>Signed Certificates</h3>
+          <button id="signCertBtn" class="btn-primary">+ Sign Certificate</button>
+        </div>
+        <div id="certList" class="cert-list">
+          <p class="loading">Loading certificates...</p>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Modal overlay -->
+  <div id="modalOverlay" class="modal-overlay hidden">
+    <div id="modalContent" class="modal"></div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+node_modules/
+data/
+.claude/
+PLAN.md
+opencode-prompt.txt
+*.prompt.txt
