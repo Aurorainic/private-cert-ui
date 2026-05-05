@@ -1,12 +1,14 @@
-# ╔══════════════════════════════════╗
-# ║         ALL CODE BY AI           ║
-# ╚══════════════════════════════════╝
-
 # Private CA Manager
+
+⚠️ ALL CODES BY AI
+
+[EN](README.md) | [中文](README_zh.md)
+
+---
 
 基于 Node.js、Express 和 [node-forge](https://github.com/digitalbazaar/forge) 的私密根证书颁发机构 Web 管理器。
 
-创建和管理自有根 CA，签发带自定义 SAN 的 TLS 证书，下载 PEM 文件。
+创建和管理自有根 CA，签发带自定义 SAN 的 TLS 证书，下载 PEM 文件，UI 支持主题和语言切换。
 
 ## 功能
 
@@ -16,11 +18,11 @@
 - **PEM 下载** — CA 证书、已签证书、私钥均支持 PEM 下载
 - **持久化存储** — 数据存储在 `data/ca/` 目录，JSON 元数据
 - **深色/浅色主题** — 右上角 🌙/☀️ 一键切换
-- **中英双语** — 右上角 🌐 一键切换，i18n 文件管理（`public/i18n/`）
+- **中英双语界面** — 右上角 🌐 一键切换，i18n 文件管理在 `public/i18n/`
 - **顶部菜单导航** — CA 管理 / 证书管理 / 帮助 三个标签页
 - **证书预览** — 弹窗显示 PEM 原文，📋 一键复制
 - **字段帮助提示** — 签发表单每个字段旁 ℹ 图标，悬停显示详细解释
-- **帮助文档** — 独立帮助页，讲解 CA、根 CA、数字证书、SAN、EKU 等核心概念
+- **帮助文档** — 独立帮助页，讲解 CA、根 CA、数字证书、SAN、EKU、有效期与序列号等概念
 
 ## 环境要求
 
@@ -59,7 +61,7 @@ PORT=8080 npm start
 | `GET` | `/api/ca/:name` | 获取 CA 元数据 |
 | `GET` | `/api/ca/:name/cert.pem` | 下载 CA 证书 PEM |
 
-**POST /api/ca** 请求体：
+**POST /api/ca**：
 
 ```json
 {
@@ -85,7 +87,7 @@ PORT=8080 npm start
 | `GET` | `/api/cert/:ca/:serial/cert.pem` | 下载证书 PEM |
 | `GET` | `/api/cert/:ca/:serial/key.pem` | 下载私钥 PEM |
 
-**POST /api/ca/:name/certs** 请求体：
+**POST /api/ca/:name/certs**：
 
 ```json
 {
@@ -117,8 +119,8 @@ private-cert-ui/
 │                   └── meta.json # 证书元数据
 ├── public/
 │   ├── i18n/
-│   │   ├── zh.json              # 中文翻译
-│   │   └── en.json              # 英文翻译
+│   │   ├── zh.json              # 中文
+│   │   └── en.json              # 英文
 │   ├── index.html
 │   ├── style.css
 │   └── app.js
@@ -126,10 +128,9 @@ private-cert-ui/
 │   ├── ca.js       # CA 初始化与加载
 │   ├── cert.js     # 证书签发
 │   ├── storage.js  # 文件持久化
-│   ├── validate.js # 输入校验
+│   ├── validate.js  # 输入校验
 │   └── index.js    # Express 服务与路由
 ├── package.json
-├── README.md
 └── README_zh.md
 ```
 
@@ -141,4 +142,4 @@ private-cert-ui/
 
 ## 许可
 
-CC0 1.0 Universal — 公有领域贡献。详见 [LICENSE](LICENSE)。
+CC0 1.0 Universal

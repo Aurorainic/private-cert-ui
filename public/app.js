@@ -239,7 +239,8 @@ function createCertCard(caName, cert, showCaName = false) {
   card.innerHTML = `
     <div class="cert-info">${infoHTML}</div>
     <div class="cert-actions">
-      <button class="btn-preview preview-cert" data-ca="${caName}" data-serial="${cert.serial}">${t("preview")}</button>
+      <button class="btn-preview preview-cert" data-ca="${caName}" data-serial="${cert.serial}">${t("preview")} ${t("certLabel")}</button>
+      <button class="btn-preview preview-key" data-ca="${caName}" data-serial="${cert.serial}">${t("preview")} ${t("keyLabel")}</button>
       <a href="/api/cert/${caName}/${cert.serial}/cert.pem" class="btn-download" download>${t("certLabel")}</a>
       <a href="/api/cert/${caName}/${cert.serial}/key.pem" class="btn-download" download>${t("keyLabel")}</a>
       <button class="btn-delete" data-serial="${cert.serial}" data-cn="${escHtml(cn)}">${t("delete")}</button>
@@ -248,6 +249,9 @@ function createCertCard(caName, cert, showCaName = false) {
 
   card.querySelector(".preview-cert").addEventListener("click", () =>
     showPreview(caName, cert.serial, "cert")
+  );
+  card.querySelector(".preview-key").addEventListener("click", () =>
+    showPreview(caName, cert.serial, "key")
   );
   card.querySelector(".btn-delete").addEventListener("click", () =>
     deleteCertificate(caName, cert.serial, cn)

@@ -1,12 +1,14 @@
-# ╔══════════════════════════════════╗
-# ║         ALL CODE BY AI           ║
-# ╚══════════════════════════════════╝
-
 # Private CA Manager
+
+⚠️ ALL CODES BY AI
+
+[EN](README.md) | [中文](README_zh.md)
+
+---
 
 A web-based Private Root Certificate Authority manager built with Node.js, Express, and [node-forge](https://github.com/digitalbazaar/forge).
 
-Create and manage your own private CA, sign TLS certificates with custom SANs, and download PEM files — all from a clean dark-themed web UI.
+Create and manage your own private CA, sign TLS certificates with custom SANs, and download PEM files — all from a clean UI with theme and language switching.
 
 ## Features
 
@@ -15,7 +17,12 @@ Create and manage your own private CA, sign TLS certificates with custom SANs, a
 - **Key Usage Control** — Choose between Server Auth (`serverAuth`) and Client Auth (`clientAuth`) extended key usage
 - **PEM Download** — Download CA certificate, signed certificates, and private keys as PEM files
 - **Persistent Storage** — All data stored on disk under `data/ca/` with JSON metadata
-- **Dark Theme UI** — Clean dark-themed web interface with sidebar navigation
+- **Dark / Light Theme** — Toggle UI theme with the top-right button
+- **English / Chinese UI** — Switch languages with the globe button, managed via `public/i18n/`
+- **Top Navigation** — CA Management, Certificate Management, and Help tabs
+- **Certificate Preview** — View PEM contents in a modal and copy to clipboard
+- **Field Help Tips** — Hoverable info icons explain form fields
+- **Help Documentation** — Built-in help page explains CA, root CA, certificates, SAN, EKU, validity, and serial numbers
 
 ## Requirements
 
@@ -54,7 +61,7 @@ PORT=8080 npm start
 | `GET` | `/api/ca/:name` | Get CA metadata |
 | `GET` | `/api/ca/:name/cert.pem` | Download CA certificate PEM |
 
-**POST /api/ca** request body:
+**POST /api/ca:**
 
 ```json
 {
@@ -80,7 +87,7 @@ PORT=8080 npm start
 | `GET` | `/api/cert/:ca/:serial/cert.pem` | Download certificate PEM |
 | `GET` | `/api/cert/:ca/:serial/key.pem` | Download private key PEM |
 
-**POST /api/ca/:name/certs** request body:
+**POST /api/ca/:name/certs:**
 
 ```json
 {
@@ -111,6 +118,9 @@ private-cert-ui/
 │                   ├── key.pem  # Certificate private key (PEM)
 │                   └── meta.json # Certificate metadata
 ├── public/
+│   ├── i18n/
+│   │   ├── zh.json              # Chinese translations
+│   │   └── en.json              # English translations
 │   ├── index.html
 │   ├── style.css
 │   └── app.js
@@ -132,4 +142,4 @@ private-cert-ui/
 
 ## License
 
-CC0 1.0 Universal — 公有领域贡献。详见 [LICENSE](LICENSE)。
+CC0 1.0 Universal

@@ -163,6 +163,29 @@ body {
   flex-direction: row;
 }
 
+#certsTab {
+  flex-direction: column;
+  padding: 24px 28px;
+}
+
+#helpTab {
+  flex-direction: column;
+  overflow-y: auto;
+  padding: 24px 28px;
+}
+
+.help-container {
+  max-width: 780px;
+  margin: 0 auto;
+  padding-bottom: 24px;
+}
+
+.cert-list {
+  flex: 1;
+  overflow-y: auto;
+  padding-bottom: 16px;
+}
+
 .panel-side {
   width: 260px;
   min-width: 200px;
