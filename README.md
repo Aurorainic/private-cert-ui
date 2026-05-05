@@ -6,23 +6,17 @@
 
 ---
 
-A web-based Private Root Certificate Authority manager built with Node.js, Express, and [node-forge](https://github.com/digitalbazaar/forge).
-
-Create and manage your own private CA, sign TLS certificates with custom SANs, and download PEM files — all from a clean UI with theme and language switching.
+A web-based Private Root Certificate Authority manager built with Node.js and Express. Data is stored in SQLite with AES-256-GCM encrypted private keys. Supports both RSA-4096 and Ed25519.
 
 ## Features
 
-- **Root CA Generation** — Create self-signed 4096-bit RSA root certificate authorities valid for 10 years
-- **Certificate Signing** — Sign end-entity certificates with 2048-bit RSA keys, random serial numbers, and configurable SANs (DNS names & IP addresses)
-- **Key Usage Control** — Choose between Server Auth (`serverAuth`) and Client Auth (`clientAuth`) extended key usage
-- **PEM Download** — Download CA certificate, signed certificates, and private keys as PEM files
-- **Persistent Storage** — All data stored on disk under `data/ca/` with JSON metadata
-- **Dark / Light Theme** — Toggle UI theme with the top-right button
-- **English / Chinese UI** — Switch languages with the globe button, managed via `public/i18n/`
-- **Top Navigation** — CA Management, Certificate Management, and Help tabs
-- **Certificate Preview** — View PEM contents in a modal and copy to clipboard
-- **Field Help Tips** — Hoverable info icons explain form fields
-- **Help Documentation** — Built-in help page explains CA, root CA, certificates, SAN, EKU, validity, and serial numbers
+- **Root CA Generation** — Self-signed root CAs with RSA-4096 or Ed25519, valid for 10 years
+- **Certificate Signing** — End-entity certificates with independently selectable key types, configurable SANs (DNS names & IP addresses)
+- **Key Usage Control** — Server Auth or Client Auth extended key usage
+- **PEM Download & Preview** — CA cert, signed certs, and private keys
+- **SQLite Storage** — All data in `data/ca.db`, private keys encrypted with AES-256-GCM
+- **Dark / Light Theme** — Toggle in the top-right corner, preference persisted
+- **Chinese / English UI** — Language toggle in the top-right corner, preference persisted
 
 ## Requirements
 
@@ -34,21 +28,25 @@ Create and manage your own private CA, sign TLS certificates with custom SANs, a
 git clone git@github.com:Aurorainic/private-cert-ui.git
 cd private-cert-ui
 git checkout dev
-
-# Install dependencies
 npm install
-
-# Start the server
 npm start
 ```
 
-The server will start on port 3000 by default. Open http://localhost:3000 in your browser.
+Starts on port 3000 by default. Open http://localhost:3000.
 
-### Custom Port
+### Private Key Encryption
+
+All private keys are AES-256-GCM encrypted before being written to the database. The master key is passed via environment variable:
 
 ```bash
-PORT=8080 npm start
+# On first run without CA_MASTER_KEY, one is generated and printed — save it
+CA_MASTER_KEY=<64-hex-chars> npm start
+
+# Custom port
+PORT=8080 CA_MASTER_KEY=<...> npm start
 ```
+
+Without `CA_MASTER_KEY`, an ephemeral key is generated each run — the database file persists but private keys become unreadable after a restart.
 
 ## API Reference
 
@@ -66,15 +64,16 @@ PORT=8080 npm start
 ```json
 {
   "name": "my-root-ca",
+  "keyType": "ed25519",
   "subject": {
     "commonName": "My Root CA",
     "organizationName": "My Company",
-    "countryName": "US",
-    "stateOrProvinceName": "California",
-    "localityName": "San Francisco"
+    "countryName": "US"
   }
 }
 ```
+
+`keyType` is `"rsa"` (default) or `"ed25519"`.
 
 ### Certificates
 
@@ -91,14 +90,12 @@ PORT=8080 npm start
 
 ```json
 {
-  "subject": {
-    "commonName": "myserver.example.com",
-    "organizationName": "My Company"
-  },
+  "subject": { "commonName": "myserver.example.com" },
   "dnsNames": ["myserver.example.com", "www.example.com"],
   "ipAddresses": ["192.168.1.1"],
   "eku": "serverAuth",
-  "days": 364
+  "days": 364,
+  "keyType": "ed25519"
 }
 ```
 
@@ -106,39 +103,29 @@ PORT=8080 npm start
 
 ```
 private-cert-ui/
-├── data/
-│   └── ca/
-│       └── <ca-name>/
-│           ├── ca.pem           # CA certificate (PEM)
-│           ├── ca-key.pem       # CA private key (PEM)
-│           ├── meta.json        # CA metadata
-│           └── certs/
-│               └── <serial>/
-│                   ├── cert.pem # Signed certificate (PEM)
-│                   ├── key.pem  # Certificate private key (PEM)
-│                   └── meta.json # Certificate metadata
+├── src/
+│   ├── db.js        # SQLite init, AES-256-GCM helpers, randomSerial
+│   ├── ca.js        # initCA(subject, keyType)
+│   ├── cert.js      # signCert(caKeyPem, caCertPem, caKeyType, subject, options)
+│   ├── storage.js   # SQLite CRUD (saveCA / listCAs / loadCA / saveCert / …)
+│   ├── validate.js  # Path parameter validation
+│   └── index.js     # Express routes
 ├── public/
-│   ├── i18n/
-│   │   ├── zh.json              # Chinese translations
-│   │   └── en.json              # English translations
+│   ├── i18n/zh.json
+│   ├── i18n/en.json
 │   ├── index.html
 │   ├── style.css
 │   └── app.js
-├── src/
-│   ├── ca.js       # CA initialization & loading
-│   ├── cert.js     # Certificate signing
-│   ├── storage.js  # File persistence layer
-│   ├── validate.js # Input validation helpers
-│   └── index.js    # Express server & routes
-├── package.json
-└── README.md
+├── data/
+│   └── ca.db        # SQLite database (gitignored, created on first run)
+└── package.json
 ```
 
 ## Security Notes
 
-- This tool is intended for **development and internal use only**. Do not expose it to untrusted networks.
-- CA private keys are stored on disk as PEM files. Secure the `data/` directory appropriately.
-- Generated certificates use SHA-256 signatures.
+- Intended for **development and internal use only**. Do not expose to untrusted networks.
+- Private keys are AES-256-GCM encrypted at rest, but the master key itself must be kept secure.
+- No authentication yet — a login system is planned.
 
 ## License
 
