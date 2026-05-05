@@ -1,14 +1,40 @@
 const express = require("express");
 const path = require("path");
+const session = require("express-session");
 const { initCA } = require("./ca");
 const { signCert } = require("./cert");
 const storage = require("./storage");
 const { isValidCaName, isValidSerial } = require("./validate");
+const { isSetupDone, setupUser, verifyUser, requireAuth } = require("./auth");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+const SESSION_SECRET = process.env.SESSION_SECRET || (() => {
+  const s = require("crypto").randomBytes(32).toString("hex");
+  console.warn("[WARN] SESSION_SECRET not set. Sessions will not survive restarts.");
+  return s;
+})();
+
+// Simple rate limiter for auth endpoints (max 5 attempts per minute per IP)
+const authAttempts = new Map();
+function rateLimitAuth(req, res, next) {
+  const ip = req.ip || req.connection.remoteAddress;
+  const minute = Math.floor(Date.now() / 60000);
+  const key = `${ip}:${minute}`;
+  const count = (authAttempts.get(key) || 0) + 1;
+  authAttempts.set(key, count);
+  if (count > 5) return res.status(429).json({ error: "Too many attempts, try again later" });
+  next();
+}
+
 app.use(express.json({ limit: "10kb" }));
+app.use(session({
+  secret: SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false,
+  cookie: { httpOnly: true, sameSite: "strict", maxAge: 8 * 60 * 60 * 1000 },
+}));
 app.use(express.static(path.join(__dirname, "..", "public")));
 
 app.param("name", (req, res, next, name) => {
@@ -22,10 +48,68 @@ app.param("serial", (req, res, next, serial) => {
 });
 
 // ---------------------------------------------------------------------------
+// Auth routes (public)
+// ---------------------------------------------------------------------------
+
+app.get("/api/auth/status", (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.json({
+    setupDone: isSetupDone(),
+    loggedIn: !!(req.session && req.session.user),
+    username: req.session?.user || null,
+  });
+});
+
+app.post("/api/auth/setup", rateLimitAuth, async (req, res) => {
+  try {
+    if (isSetupDone()) {
+      return res.status(409).json({ error: "Already configured" });
+    }
+
+    const { username, password } = req.body;
+    if (!username || !password) {
+      return res.status(400).json({ error: "Username and password required" });
+    }
+
+    await setupUser(username, password);
+    req.session.user = username;
+    res.status(201).json({ message: "Setup complete", username });
+  } catch (err) {
+    const statusCode = err.message.includes("already exists") ? 409 : 400;
+    res.status(statusCode).json({ error: err.message });
+  }
+});
+
+app.post("/api/auth/login", rateLimitAuth, async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    if (!username || !password) {
+      return res.status(400).json({ error: "Username and password required" });
+    }
+
+    await verifyUser(username, password);
+    req.session.user = username;
+    res.json({ message: "Logged in", username });
+  } catch (err) {
+    const statusCode = err.message.includes("Invalid credentials") ? 401 : 400;
+    res.status(statusCode).json({ error: err.message });
+  }
+});
+
+app.post("/api/auth/logout", (req, res) => {
+  req.session.destroy((err) => {
+    if (err) {
+      return res.status(500).json({ error: "Logout failed" });
+    }
+    res.json({ message: "Logged out" });
+  });
+});
+
+// ---------------------------------------------------------------------------
 // CA routes
 // ---------------------------------------------------------------------------
 
-app.get("/api/ca", (_req, res) => {
+app.get("/api/ca", requireAuth, (_req, res) => {
   try {
     res.json(storage.listCAs());
   } catch (err) {
@@ -33,7 +117,7 @@ app.get("/api/ca", (_req, res) => {
   }
 });
 
-app.post("/api/ca", async (req, res) => {
+app.post("/api/ca", requireAuth, async (req, res) => {
   try {
     const { name, subject, keyType = "rsa" } = req.body;
     if (!name || !subject) return res.status(400).json({ error: "name and subject are required" });
@@ -60,7 +144,7 @@ app.post("/api/ca", async (req, res) => {
   }
 });
 
-app.get("/api/ca/:name", (req, res) => {
+app.get("/api/ca/:name", requireAuth, (req, res) => {
   try {
     const ca = storage.listCAs().find((c) => c.name === req.params.name);
     if (!ca) return res.status(404).json({ error: "CA not found" });
@@ -70,7 +154,7 @@ app.get("/api/ca/:name", (req, res) => {
   }
 });
 
-app.get("/api/ca/:name/cert.pem", (req, res) => {
+app.get("/api/ca/:name/cert.pem", requireAuth, (req, res) => {
   try {
     const caData = storage.loadCA(req.params.name);
     if (!caData) return res.status(404).json({ error: "CA not found" });
@@ -86,7 +170,7 @@ app.get("/api/ca/:name/cert.pem", (req, res) => {
 // Certificate routes
 // ---------------------------------------------------------------------------
 
-app.get("/api/ca/:name/certs", (req, res) => {
+app.get("/api/ca/:name/certs", requireAuth, (req, res) => {
   try {
     res.json(storage.listCerts(req.params.name));
   } catch (err) {
@@ -94,7 +178,7 @@ app.get("/api/ca/:name/certs", (req, res) => {
   }
 });
 
-app.post("/api/ca/:name/certs", async (req, res) => {
+app.post("/api/ca/:name/certs", requireAuth, async (req, res) => {
   try {
     const caName = req.params.name;
     const caData = storage.loadCA(caName);
@@ -129,7 +213,7 @@ app.post("/api/ca/:name/certs", async (req, res) => {
   }
 });
 
-app.get("/api/cert/:ca/:serial", (req, res) => {
+app.get("/api/cert/:ca/:serial", requireAuth, (req, res) => {
   try {
     const certData = storage.loadCert(req.params.ca, req.params.serial);
     if (!certData) return res.status(404).json({ error: "Certificate not found" });
@@ -139,7 +223,7 @@ app.get("/api/cert/:ca/:serial", (req, res) => {
   }
 });
 
-app.delete("/api/cert/:ca/:serial", (req, res) => {
+app.delete("/api/cert/:ca/:serial", requireAuth, (req, res) => {
   try {
     if (!storage.deleteCert(req.params.ca, req.params.serial)) {
       return res.status(404).json({ error: "Certificate not found" });
@@ -150,7 +234,7 @@ app.delete("/api/cert/:ca/:serial", (req, res) => {
   }
 });
 
-app.get("/api/cert/:ca/:serial/cert.pem", (req, res) => {
+app.get("/api/cert/:ca/:serial/cert.pem", requireAuth, (req, res) => {
   try {
     const certData = storage.loadCert(req.params.ca, req.params.serial);
     if (!certData) return res.status(404).json({ error: "Certificate not found" });
@@ -162,7 +246,7 @@ app.get("/api/cert/:ca/:serial/cert.pem", (req, res) => {
   }
 });
 
-app.get("/api/cert/:ca/:serial/key.pem", (req, res) => {
+app.get("/api/cert/:ca/:serial/key.pem", requireAuth, (req, res) => {
   try {
     const certData = storage.loadCert(req.params.ca, req.params.serial);
     if (!certData) return res.status(404).json({ error: "Certificate not found" });

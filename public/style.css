@@ -882,3 +882,56 @@ body {
     flex-direction: column;
   }
 }
+
+/* ================================================================
+   Auth pages (setup wizard & login)
+   ================================================================ */
+.auth-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+}
+
+.auth-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 2.5rem 2rem;
+  width: 100%;
+  max-width: 380px;
+}
+
+.auth-logo {
+  font-size: 2.5rem;
+  text-align: center;
+  margin-bottom: 0.5rem;
+}
+
+.auth-card h2 {
+  text-align: center;
+  margin: 0 0 0.5rem;
+  color: var(--text);
+  font-size: 1.3rem;
+}
+
+.auth-desc {
+  text-align: center;
+  color: var(--textMuted);
+  font-size: 0.88rem;
+  margin: 0 0 1.5rem;
+}
+
+.btn-full {
+  width: 100%;
+  margin-top: 0.5rem;
+}
+
+/* Nav username display */
+.nav-username {
+  font-size: 0.82rem;
+  color: var(--textMuted);
+  padding: 0 4px;
+}
