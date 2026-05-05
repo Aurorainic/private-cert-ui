@@ -6,23 +6,17 @@
 
 ---
 
-基于 Node.js、Express 和 [node-forge](https://github.com/digitalbazaar/forge) 的私密根证书颁发机构 Web 管理器。
-
-创建和管理自有根 CA，签发带自定义 SAN 的 TLS 证书，下载 PEM 文件，UI 支持主题和语言切换。
+基于 Node.js + Express 的私密根证书颁发机构 Web 管理器。数据存储在 SQLite，私钥 AES-256-GCM 加密，支持 RSA-4096 和 Ed25519 两种密钥类型。
 
 ## 功能
 
-- **根 CA 生成** — 自签名 4096-bit RSA 根证书，有效期 10 年
-- **证书签发** — 2048-bit RSA 终端证书，随机序列号，可配置 SAN（DNS 名称 & IP 地址）
-- **密钥用途选择** — Server Auth / Client Auth 扩展密钥用途
-- **PEM 下载** — CA 证书、已签证书、私钥均支持 PEM 下载
-- **持久化存储** — 数据存储在 `data/ca/` 目录，JSON 元数据
-- **深色/浅色主题** — 右上角 🌙/☀️ 一键切换
-- **中英双语界面** — 右上角 🌐 一键切换，i18n 文件管理在 `public/i18n/`
-- **顶部菜单导航** — CA 管理 / 证书管理 / 帮助 三个标签页
-- **证书预览** — 弹窗显示 PEM 原文，📋 一键复制
-- **字段帮助提示** — 签发表单每个字段旁 ℹ 图标，悬停显示详细解释
-- **帮助文档** — 独立帮助页，讲解 CA、根 CA、数字证书、SAN、EKU、有效期与序列号等概念
+- **根 CA 生成** — 自签名根 CA，可选 RSA-4096（10 年有效期）或 Ed25519
+- **证书签发** — 终端证书，CA 密钥类型与叶证书密钥类型独立可选，支持 SAN（DNS 名称 & IP 地址）
+- **密钥用途** — Server Auth / Client Auth 扩展密钥用途
+- **PEM 下载** — CA 证书、已签证书、私钥均支持 PEM 下载与预览
+- **SQLite 存储** — 所有数据存入 `data/ca.db`，私钥 AES-256-GCM 加密
+- **深色/浅色主题** — 右上角一键切换，偏好持久化
+- **中英文界面** — 右上角语言切换，偏好持久化
 
 ## 环境要求
 
@@ -34,21 +28,25 @@
 git clone git@github.com:Aurorainic/private-cert-ui.git
 cd private-cert-ui
 git checkout dev
-
-# 安装依赖
 npm install
-
-# 启动服务
 npm start
 ```
 
-默认监听 3000 端口。打开 http://localhost:3000 即可使用。
+默认监听 3000 端口，打开 http://localhost:3000 即可使用。
 
-### 自定义端口
+### 私钥加密密钥
+
+所有私钥在写入数据库前用 AES-256-GCM 加密。加密主密钥通过环境变量传入：
 
 ```bash
-PORT=8080 npm start
+# 首次启动时若未设置，会自动生成并打印到控制台，请保存
+CA_MASTER_KEY=<64位十六进制> npm start
+
+# 自定义端口
+PORT=8080 CA_MASTER_KEY=<...> npm start
 ```
+
+未设置 `CA_MASTER_KEY` 时，每次启动生成临时密钥——数据库文件保留，但重启后私钥无法解密。
 
 ## API 参考
 
@@ -66,15 +64,16 @@ PORT=8080 npm start
 ```json
 {
   "name": "my-root-ca",
+  "keyType": "ed25519",
   "subject": {
     "commonName": "My Root CA",
     "organizationName": "My Company",
-    "countryName": "US",
-    "stateOrProvinceName": "California",
-    "localityName": "San Francisco"
+    "countryName": "CN"
   }
 }
 ```
+
+`keyType` 可选 `"rsa"`（默认）或 `"ed25519"`。
 
 ### 证书
 
@@ -91,14 +90,12 @@ PORT=8080 npm start
 
 ```json
 {
-  "subject": {
-    "commonName": "myserver.example.com",
-    "organizationName": "My Company"
-  },
+  "subject": { "commonName": "myserver.example.com" },
   "dnsNames": ["myserver.example.com", "www.example.com"],
   "ipAddresses": ["192.168.1.1"],
   "eku": "serverAuth",
-  "days": 364
+  "days": 364,
+  "keyType": "ed25519"
 }
 ```
 
@@ -106,39 +103,29 @@ PORT=8080 npm start
 
 ```
 private-cert-ui/
-├── data/
-│   └── ca/
-│       └── <ca-name>/
-│           ├── ca.pem           # CA 证书 (PEM)
-│           ├── ca-key.pem       # CA 私钥 (PEM)
-│           ├── meta.json        # CA 元数据
-│           └── certs/
-│               └── <serial>/
-│                   ├── cert.pem # 已签证书 (PEM)
-│                   ├── key.pem  # 证书私钥 (PEM)
-│                   └── meta.json # 证书元数据
+├── src/
+│   ├── db.js        # SQLite 初始化、AES-256-GCM 加密工具、randomSerial
+│   ├── ca.js        # initCA(subject, keyType)
+│   ├── cert.js      # signCert(caKeyPem, caCertPem, caKeyType, subject, options)
+│   ├── storage.js   # SQLite CRUD（saveCA / listCAs / loadCA / saveCert / …）
+│   ├── validate.js  # 路径参数校验
+│   └── index.js     # Express 路由
 ├── public/
-│   ├── i18n/
-│   │   ├── zh.json              # 中文
-│   │   └── en.json              # 英文
+│   ├── i18n/zh.json
+│   ├── i18n/en.json
 │   ├── index.html
 │   ├── style.css
 │   └── app.js
-├── src/
-│   ├── ca.js       # CA 初始化与加载
-│   ├── cert.js     # 证书签发
-│   ├── storage.js  # 文件持久化
-│   ├── validate.js  # 输入校验
-│   └── index.js    # Express 服务与路由
-├── package.json
-└── README_zh.md
+├── data/
+│   └── ca.db        # SQLite 数据库（gitignored，首次运行自动创建）
+└── package.json
 ```
 
 ## 安全说明
 
-- 本工具仅用于**开发与内部环境**。请勿暴露到不可信网络。
-- CA 私钥以 PEM 明文存储在磁盘上。请妥善保护 `data/` 目录。
-- 生成的证书使用 SHA-256 签名。
+- 本工具仅用于**开发与内部环境**，请勿暴露到不可信网络。
+- 私钥以 AES-256-GCM 加密存储，但主密钥本身需要妥善保管。
+- 暂无登录认证，计划后续加入账密系统。
 
 ## 许可
 

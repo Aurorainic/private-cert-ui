@@ -1,130 +1,86 @@
-const forge = require("node-forge");
+require("reflect-metadata");
+const x509 = require("@peculiar/x509");
+const { randomSerial } = require("./db");
+const { importPrivateKey, importPublicKey, exportKeyPem, buildName, ALG, SIGN_ALG, webcrypto } = require("./ca");
 
-/**
- * Sign a new end-entity certificate under the given CA.
- *
- * @param {string} caKeyPem  - PEM-encoded CA private key
- * @param {string} caCertPem - PEM-encoded CA certificate
- * @param {object} subject   - subject fields (commonName, organizationName, countryName, etc.)
- * @param {object} options   - { dnsNames: [], ipAddresses: [], eku: "serverAuth"|"clientAuth", days: 364 }
- * @returns {{ key: forge.pki.PrivateKey, cert: forge.pki.Certificate, keyPem: string, certPem: string }}
- */
-function signCert(caKeyPem, caCertPem, subject, options = {}) {
-  const caKey = forge.pki.privateKeyFromPem(caKeyPem);
-  const caCert = forge.pki.certificateFromPem(caCertPem);
-
-  // Default options
+// ---------------------------------------------------------------------------
+// signCert — sign an end-entity certificate under a CA
+// ---------------------------------------------------------------------------
+async function signCert(caKeyPem, caCertPem, caKeyType, subject, options = {}) {
   const dnsNames = options.dnsNames || [];
   const ipAddresses = options.ipAddresses || [];
   const eku = options.eku || "serverAuth";
   const days = options.days || 364;
+  const keyType = options.keyType || "rsa";
 
-  // Generate 2048-bit key pair for the new cert
-  console.log("[CERT] Generating 2048-bit RSA key pair...");
-  const keys = forge.pki.rsa.generateKeyPair(2048);
+  // Generate leaf key pair
+  const leafAlg = ALG[keyType];
+  const leafKeys = await webcrypto.subtle.generateKey(leafAlg, true, ["sign", "verify"]);
 
-  const cert = forge.pki.createCertificate();
-  cert.publicKey = keys.publicKey;
-
-  // Random serial number (8 bytes, hex-encoded)
-  cert.serialNumber = randomSerial();
+  // Load CA key and cert
+  const caPrivKey = await importPrivateKey(caKeyPem, caKeyType);
+  const caCert = new x509.X509Certificate(caCertPem);
 
   const now = new Date();
-  cert.validity.notBefore = now;
-  cert.validity.notAfter = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate() + days
-  );
+  // Backdate by 2 minutes to tolerate minor clock skew on verifying clients
+  const notBefore = new Date(now.getTime() - 2 * 60 * 1000);
+  const notAfter = new Date(now);
+  notAfter.setDate(notAfter.getDate() + days);
 
-  // Subject
-  const subjectAttrs = [];
-  if (subject.commonName) {
-    subjectAttrs.push({ name: "commonName", value: subject.commonName });
-  }
-  if (subject.organizationName) {
-    subjectAttrs.push({ name: "organizationName", value: subject.organizationName });
-  }
-  if (subject.countryName) {
-    subjectAttrs.push({ name: "countryName", value: subject.countryName });
-  }
-  if (subject.stateOrProvinceName) {
-    subjectAttrs.push({ name: "stateOrProvinceName", value: subject.stateOrProvinceName });
-  }
-  if (subject.localityName) {
-    subjectAttrs.push({ name: "localityName", value: subject.localityName });
-  }
-  cert.setSubject(subjectAttrs);
+  // KeyUsage: Ed25519 is a signature-only algorithm — keyEncipherment does not apply.
+  // RSA certs used for TLS key exchange need keyEncipherment; ECDH/EdDSA do not.
+  const keyUsageFlags = keyType === "rsa"
+    ? x509.KeyUsageFlags.digitalSignature | x509.KeyUsageFlags.keyEncipherment
+    : x509.KeyUsageFlags.digitalSignature;
 
-  // Issuer = CA subject
-  cert.setIssuer(caCert.subject.attributes);
+  // EKU: honour the user's choice exactly — don't silently add clientAuth to serverAuth certs.
+  const ekuOids = eku === "serverAuth"
+    ? [x509.ExtendedKeyUsage.serverAuth]
+    : [x509.ExtendedKeyUsage.clientAuth];
 
-  // Extensions
   const extensions = [
-    {
-      name: "basicConstraints",
-      cA: false,
-      critical: true,
-    },
-    {
-      name: "keyUsage",
-      digitalSignature: true,
-      keyEncipherment: true,
-      critical: true,
-    },
-    {
-      name: "extKeyUsage",
-      serverAuth: eku === "serverAuth",
-      clientAuth: eku === "clientAuth" || eku === "serverAuth",
-      critical: true,
-    },
-    {
-      name: "subjectKeyIdentifier",
-    },
-    {
-      name: "authorityKeyIdentifier",
-      keyIdentifier: true,
-    },
+    // BasicConstraints non-critical on leaf certs is conventional; critical is also valid
+    // but unnecessary since cA=false is the default interpretation.
+    new x509.BasicConstraintsExtension(false, undefined, false),
+    new x509.KeyUsagesExtension(keyUsageFlags, true),
+    // EKU non-critical: unknown-EKU-aware software should still accept the cert.
+    new x509.ExtendedKeyUsageExtension(ekuOids, false),
+    await x509.SubjectKeyIdentifierExtension.create(leafKeys.publicKey, false, webcrypto),
+    await x509.AuthorityKeyIdentifierExtension.create(caCert, false, webcrypto),
   ];
 
-  // SAN
-  const sanAltNames = [];
-  for (const dns of dnsNames) {
-    sanAltNames.push({ type: 2, value: dns }); // DNS
-  }
-  for (const ip of ipAddresses) {
-    sanAltNames.push({ type: 7, value: ip }); // IP
-  }
-  if (sanAltNames.length > 0) {
-    extensions.push({
-      name: "subjectAltName",
-      altNames: sanAltNames,
-    });
+  // SAN: required by RFC 2818 for TLS server certs. Auto-include CN as a DNS SAN
+  // when no explicit SANs are provided, so the cert works in modern browsers/clients.
+  const effectiveDns = [...dnsNames];
+  if (eku === "serverAuth" && effectiveDns.length === 0 && ipAddresses.length === 0 && subject.commonName) {
+    effectiveDns.push(subject.commonName);
   }
 
-  cert.setExtensions(extensions);
-
-  // Sign with CA key
-  cert.sign(caKey, forge.md.sha256.create());
-
-  const keyPem = forge.pki.privateKeyToPem(keys.privateKey);
-  const certPem = forge.pki.certificateToPem(cert);
-
-  console.log("[CERT] Certificate signed for " + subject.commonName + " (serial: " + cert.serialNumber + ")");
-  return { key: keys.privateKey, cert, keyPem, certPem };
-}
-
-/**
- * Generate a random hex serial number (8 bytes).
- */
-function randomSerial() {
-  const bytes = forge.random.getBytesSync(8);
-  let hex = "";
-  for (let i = 0; i < bytes.length; i++) {
-    const b = bytes.charCodeAt(i).toString(16);
-    hex += b.length === 1 ? "0" + b : b;
+  if (effectiveDns.length > 0 || ipAddresses.length > 0) {
+    const altNames = [
+      ...effectiveDns.map((v) => new x509.GeneralName("dns", v)),
+      ...ipAddresses.map((v) => new x509.GeneralName("ip", v)),
+    ];
+    extensions.push(new x509.SubjectAlternativeNameExtension(altNames));
   }
-  return hex.toUpperCase();
+
+  const cert = await x509.X509CertificateGenerator.create({
+    serialNumber: randomSerial(),
+    subject: buildName(subject),
+    issuer: caCert.subject,
+    notBefore,
+    notAfter,
+    signingAlgorithm: SIGN_ALG[caKeyType],
+    publicKey: leafKeys.publicKey,
+    signingKey: caPrivKey,
+    extensions,
+  });
+
+  const keyPem = await exportKeyPem(leafKeys.privateKey);
+  const certPem = cert.toString("pem");
+
+  console.log(`[CERT] Signed for ${subject.commonName} (${keyType.toUpperCase()}, serial: ${cert.serialNumber})`);
+  return { certPem, keyPem, cert, keyType };
 }
 
 module.exports = { signCert };

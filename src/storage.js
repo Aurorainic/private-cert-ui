@@ -1,105 +1,50 @@
-const fs = require("fs");
-const path = require("path");
+const { db, encryptKey, decryptKey } = require("./db");
 const { isValidCaName, isValidSerial } = require("./validate");
-
-const DATA_DIR = path.join(__dirname, "..", "data", "ca");
-
-/**
- * Ensure the data directory exists.
- */
-function ensureDir(dir) {
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-}
 
 // ---------------------------------------------------------------------------
 // CA operations
 // ---------------------------------------------------------------------------
 
-/**
- * Save a CA (private key + certificate + metadata).
- *
- * @param {string} name - CA name (directory name)
- * @param {object} ca   - { key: forge.pki.PrivateKey, cert: forge.pki.Certificate }
- * @param {object} meta - additional metadata to persist
- */
-function saveCA(name, ca, meta = {}) {
+function saveCA(name, { certPem, keyPem, cert, keyType = "rsa" }) {
   if (!isValidCaName(name)) throw new Error("Invalid CA name");
-  const caDir = path.join(DATA_DIR, name);
-  ensureDir(caDir);
-
-  const { pki } = require("node-forge");
-  const keyPem = pki.privateKeyToPem(ca.key);
-  const certPem = pki.certificateToPem(ca.cert);
-
-  fs.writeFileSync(path.join(caDir, "ca-key.pem"), keyPem, "utf8");
-  fs.writeFileSync(path.join(caDir, "ca.pem"), certPem, "utf8");
-
-  const metaData = {
+  const enc = encryptKey(keyPem);
+  const subject = cert.subject;
+  db.prepare(`
+    INSERT OR REPLACE INTO cas
+      (name, subject, serial, not_before, not_after, cert_pem, key_enc, key_iv, key_tag, key_type)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
     name,
-    subject: ca.cert.subject.attributes.map((a) => ({
-      name: a.name,
-      value: a.value,
-    })),
-    serialNumber: ca.cert.serialNumber,
-    notBefore: ca.cert.validity.notBefore,
-    notAfter: ca.cert.validity.notAfter,
-    ...meta,
-  };
-  fs.writeFileSync(path.join(caDir, "meta.json"), JSON.stringify(metaData, null, 2), "utf8");
+    subject,
+    cert.serialNumber,
+    cert.notBefore.toISOString(),
+    cert.notAfter.toISOString(),
+    certPem,
+    enc.key_enc, enc.key_iv, enc.key_tag,
+    keyType
+  );
 }
 
-/**
- * List all CAs stored on disk.
- *
- * @returns {Array<{ name: string, subject: string, notAfter: string }>}
- */
 function listCAs() {
-  ensureDir(DATA_DIR);
-  const entries = fs.readdirSync(DATA_DIR, { withFileTypes: true });
-  const cas = [];
-  for (const entry of entries) {
-    if (entry.isDirectory()) {
-      const metaPath = path.join(DATA_DIR, entry.name, "meta.json");
-      if (fs.existsSync(metaPath)) {
-        try {
-          const meta = JSON.parse(fs.readFileSync(metaPath, "utf8"));
-          cas.push({
-            name: entry.name,
-            subject: meta.subject,
-            serialNumber: meta.serialNumber,
-            notBefore: meta.notBefore,
-            notAfter: meta.notAfter,
-          });
-        } catch {
-          cas.push({ name: entry.name });
-        }
-      } else {
-        cas.push({ name: entry.name });
-      }
-    }
-  }
-  return cas;
+  return db.prepare("SELECT name, subject, serial, not_before, not_after, key_type FROM cas ORDER BY name").all()
+    .map((row) => ({
+      name: row.name,
+      subject: row.subject,
+      serialNumber: row.serial,
+      notBefore: row.not_before,
+      notAfter: row.not_after,
+      keyType: row.key_type,
+    }));
 }
 
-/**
- * Load raw PEM strings for a CA from disk.
- *
- * @param {string} name
- * @returns {{ keyPem: string, certPem: string } | null}
- */
 function loadCA(name) {
   if (!isValidCaName(name)) throw new Error("Invalid CA name");
-  const caDir = path.join(DATA_DIR, name);
-  const keyPath = path.join(caDir, "ca-key.pem");
-  const certPath = path.join(caDir, "ca.pem");
-  if (!fs.existsSync(keyPath) || !fs.existsSync(certPath)) {
-    return null;
-  }
+  const row = db.prepare("SELECT * FROM cas WHERE name = ?").get(name);
+  if (!row) return null;
   return {
-    keyPem: fs.readFileSync(keyPath, "utf8"),
-    certPem: fs.readFileSync(certPath, "utf8"),
+    certPem: row.cert_pem,
+    keyPem: decryptKey(row.key_enc, row.key_iv, row.key_tag),
+    keyType: row.key_type,
   };
 }
 
@@ -107,120 +52,70 @@ function loadCA(name) {
 // Certificate operations
 // ---------------------------------------------------------------------------
 
-/**
- * Save a signed certificate under a CA.
- *
- * @param {string} caName
- * @param {object} certData - { keyPem, certPem, serial, subject, dnsNames, ipAddresses, eku, notAfter, notBefore }
- */
-function saveCert(caName, certData) {
+function saveCert(caName, { certPem, keyPem, cert, keyType = "rsa", subject, dnsNames, ipAddresses, eku }) {
   if (!isValidCaName(caName)) throw new Error("Invalid CA name");
-  if (!isValidSerial(certData.serial)) throw new Error("Invalid serial number");
-  const certDir = path.join(DATA_DIR, caName, "certs", certData.serial);
-  ensureDir(certDir);
-
-  fs.writeFileSync(path.join(certDir, "cert.pem"), certData.certPem, "utf8");
-  fs.writeFileSync(path.join(certDir, "key.pem"), certData.keyPem, "utf8");
-
-  const meta = {
-    serial: certData.serial,
-    subject: certData.subject,
-    dnsNames: certData.dnsNames || [],
-    ipAddresses: certData.ipAddresses || [],
-    eku: certData.eku || "serverAuth",
-    notBefore: certData.notBefore,
-    notAfter: certData.notAfter,
-    createdAt: new Date().toISOString(),
-  };
-  fs.writeFileSync(path.join(certDir, "meta.json"), JSON.stringify(meta, null, 2), "utf8");
+  const serial = cert.serialNumber;
+  if (!isValidSerial(serial)) throw new Error("Invalid serial number");
+  const enc = encryptKey(keyPem);
+  db.prepare(`
+    INSERT OR REPLACE INTO certs
+      (serial, ca_name, subject, dns_names, ip_addresses, eku, not_before, not_after, created_at,
+       cert_pem, key_enc, key_iv, key_tag, key_type)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    serial, caName,
+    JSON.stringify(subject),
+    JSON.stringify(dnsNames || []),
+    JSON.stringify(ipAddresses || []),
+    eku || "serverAuth",
+    cert.notBefore.toISOString(),
+    cert.notAfter.toISOString(),
+    new Date().toISOString(),
+    certPem,
+    enc.key_enc, enc.key_iv, enc.key_tag,
+    keyType
+  );
 }
 
-/**
- * List all certificates under a CA.
- *
- * @param {string} caName
- * @returns {Array<object>}
- */
 function listCerts(caName) {
   if (!isValidCaName(caName)) throw new Error("Invalid CA name");
-  const certsDir = path.join(DATA_DIR, caName, "certs");
-  if (!fs.existsSync(certsDir)) {
-    return [];
-  }
-  const entries = fs.readdirSync(certsDir, { withFileTypes: true });
-  const certs = [];
-  for (const entry of entries) {
-    if (entry.isDirectory()) {
-      const metaPath = path.join(certsDir, entry.name, "meta.json");
-      if (fs.existsSync(metaPath)) {
-        try {
-          const meta = JSON.parse(fs.readFileSync(metaPath, "utf8"));
-          certs.push(meta);
-        } catch {
-          certs.push({ serial: entry.name });
-        }
-      }
-    }
-  }
-  // Sort by creation date descending
-  certs.sort((a, b) => {
-    const da = a.createdAt ? new Date(a.createdAt) : new Date(0);
-    const db = b.createdAt ? new Date(b.createdAt) : new Date(0);
-    return db - da;
-  });
-  return certs;
+  return db.prepare(
+    "SELECT * FROM certs WHERE ca_name = ? ORDER BY created_at DESC"
+  ).all(caName).map(rowToMeta);
 }
 
-/**
- * Load certificate PEM and key PEM for a specific certificate.
- *
- * @param {string} caName
- * @param {string} serial
- * @returns {{ certPem: string, keyPem: string, meta: object } | null}
- */
 function loadCert(caName, serial) {
   if (!isValidCaName(caName)) throw new Error("Invalid CA name");
   if (!isValidSerial(serial)) throw new Error("Invalid serial number");
-  const certDir = path.join(DATA_DIR, caName, "certs", serial);
-  const certPath = path.join(certDir, "cert.pem");
-  const keyPath = path.join(certDir, "key.pem");
-  const metaPath = path.join(certDir, "meta.json");
-  if (!fs.existsSync(certPath) || !fs.existsSync(keyPath)) {
-    return null;
-  }
+  const row = db.prepare("SELECT * FROM certs WHERE ca_name = ? AND serial = ?").get(caName, serial);
+  if (!row) return null;
   return {
-    certPem: fs.readFileSync(certPath, "utf8"),
-    keyPem: fs.readFileSync(keyPath, "utf8"),
-    meta: fs.existsSync(metaPath)
-      ? JSON.parse(fs.readFileSync(metaPath, "utf8"))
-      : {},
+    certPem: row.cert_pem,
+    keyPem: decryptKey(row.key_enc, row.key_iv, row.key_tag),
+    meta: rowToMeta(row),
   };
 }
 
-/**
- * Delete a certificate (files + directory).
- *
- * @param {string} caName
- * @param {string} serial
- * @returns {boolean} true if deleted, false if not found
- */
 function deleteCert(caName, serial) {
   if (!isValidCaName(caName)) throw new Error("Invalid CA name");
   if (!isValidSerial(serial)) throw new Error("Invalid serial number");
-  const certDir = path.join(DATA_DIR, caName, "certs", serial);
-  if (!fs.existsSync(certDir)) {
-    return false;
-  }
-  fs.rmSync(certDir, { recursive: true, force: true });
-  return true;
+  const result = db.prepare("DELETE FROM certs WHERE ca_name = ? AND serial = ?").run(caName, serial);
+  return result.changes > 0;
 }
 
-module.exports = {
-  saveCA,
-  listCAs,
-  loadCA,
-  saveCert,
-  listCerts,
-  loadCert,
-  deleteCert,
-};
+function rowToMeta(row) {
+  return {
+    serial: row.serial,
+    caName: row.ca_name,
+    subject: JSON.parse(row.subject),
+    dnsNames: JSON.parse(row.dns_names),
+    ipAddresses: JSON.parse(row.ip_addresses),
+    eku: row.eku,
+    notBefore: row.not_before,
+    notAfter: row.not_after,
+    createdAt: row.created_at,
+    keyType: row.key_type,
+  };
+}
+
+module.exports = { saveCA, listCAs, loadCA, saveCert, listCerts, loadCert, deleteCert };

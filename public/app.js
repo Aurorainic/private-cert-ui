@@ -153,6 +153,7 @@ async function loadCAList() {
         <div class="ca-item-name">${escHtml(ca.name)}</div>
         <div class="ca-item-subject">${escHtml(subjectStr)}</div>
         <div class="ca-item-expiry">${t("expires")}: ${formatDate(ca.notAfter)}</div>
+        ${ca.keyType ? `<div class="cert-count">${ca.keyType.toUpperCase()}</div>` : ""}
         ${certCount ? `<div class="cert-count">${certCount} cert(s)</div>` : ""}
       `;
 
@@ -185,6 +186,7 @@ async function selectCA(name) {
     document.getElementById("caMeta").innerHTML = `
       <p><strong>${t("subject")}</strong> ${escHtml(subjectStr)}</p>
       <p><strong>${t("serial")}</strong> ${escHtml(ca.serialNumber)}</p>
+      <p><strong>${t("keyType")}</strong> ${escHtml((ca.keyType || "rsa").toUpperCase())}</p>
       <p><strong>${t("created")}</strong> ${formatDate(ca.notBefore)}</p>
       <p><strong>${t("expires")}</strong> ${formatDate(ca.notAfter)}</p>
     `;
@@ -234,6 +236,7 @@ function createCertCard(caName, cert, showCaName = false) {
     <div class="cert-serial">${t("serial")}: ${escHtml(cert.serial)}</div>
     ${sanStr ? `<div class="cert-serial">${escHtml(sanStr)}</div>` : ""}
     <div class="cert-expiry">${t("expires")}: ${formatDate(cert.notAfter)}</div>
+    ${cert.keyType ? `<div class="cert-serial">${t("keyType")}: ${escHtml(cert.keyType.toUpperCase())}</div>` : ""}
   `;
 
   card.innerHTML = `
@@ -341,9 +344,18 @@ function showNewCaForm() {
           <input type="text" id="stateOrProvinceName" placeholder="California" />
         </div>
       </div>
-      <div class="form-group">
-        <label for="localityName">${t("locality")}</label>
-        <input type="text" id="localityName" placeholder="San Francisco" />
+      <div class="form-row">
+        <div class="form-group">
+          <label for="localityName">${t("locality")}</label>
+          <input type="text" id="localityName" placeholder="San Francisco" />
+        </div>
+        <div class="form-group">
+          <label for="caKeyType">${t("keyType")}</label>
+          <select id="caKeyType">
+            <option value="rsa">${t("keyTypeRsa")}</option>
+            <option value="ed25519">${t("keyTypeEd25519")}</option>
+          </select>
+        </div>
       </div>
       <div class="form-actions">
         <button type="button" class="btn-secondary" onclick="closeFormModal()">${t("cancel")}</button>
@@ -368,11 +380,12 @@ function showNewCaForm() {
       stateOrProvinceName: document.getElementById("stateOrProvinceName").value.trim() || undefined,
       localityName: document.getElementById("localityName").value.trim() || undefined,
     };
+    const keyType = document.getElementById("caKeyType").value;
 
     closeFormModal();
     try {
       showToast(t("generating"));
-      await api.post("/api/ca", { name, subject });
+      await api.post("/api/ca", { name, subject, keyType });
       showToast(t("certCreated"));
       await loadCAList();
       await selectCA(name);
@@ -443,6 +456,13 @@ function showSignCertForm() {
           </div>
           <input type="number" id="days" value="364" min="1" max="3650" />
         </div>
+        <div class="form-group">
+          <label for="certKeyType">${t("keyType")}</label>
+          <select id="certKeyType">
+            <option value="rsa">${t("keyTypeRsa")}</option>
+            <option value="ed25519">${t("keyTypeEd25519")}</option>
+          </select>
+        </div>
       </div>
       <div class="form-actions">
         <button type="button" class="btn-secondary" onclick="closeFormModal()">${t("cancel")}</button>
@@ -472,6 +492,7 @@ function showSignCertForm() {
       ipAddresses: ipRaw ? ipRaw.split(",").map((s) => s.trim()).filter(Boolean) : [],
       eku: document.getElementById("eku").value,
       days: parseInt(document.getElementById("days").value, 10) || 364,
+      keyType: document.getElementById("certKeyType").value,
     };
 
     closeFormModal();

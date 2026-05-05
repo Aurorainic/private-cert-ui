@@ -1,107 +1,95 @@
-const forge = require("node-forge");
+require("reflect-metadata");
+const { Crypto } = require("@peculiar/webcrypto");
+const x509 = require("@peculiar/x509");
+const { randomSerial } = require("./db");
 
-/**
- * Initialize a new Root CA: generates a 4096-bit RSA key pair and a
- * self-signed CA certificate valid for 10 years with CA:TRUE constraint.
- *
- * @param {object} subject - subject fields {commonName, organizationName, countryName, stateOrProvinceName, localityName}
- * @returns {{ key: forge.pki.PrivateKey, cert: forge.pki.Certificate }}
- */
-function initCA(subject) {
-  console.log("[CA] Generating 4096-bit RSA key pair...");
-  const keys = forge.pki.rsa.generateKeyPair(4096);
+const webcrypto = new Crypto();
+x509.cryptoProvider.set(webcrypto);
 
-  const cert = forge.pki.createCertificate();
-  cert.publicKey = keys.publicKey;
-  cert.serialNumber = randomSerial();
+// ---------------------------------------------------------------------------
+// Key algorithm descriptors
+// ---------------------------------------------------------------------------
+const ALG = {
+  rsa: {
+    name: "RSASSA-PKCS1-v1_5",
+    hash: "SHA-256",
+    publicExponent: new Uint8Array([1, 0, 1]),
+    modulusLength: 4096,
+  },
+  ed25519: { name: "Ed25519" },
+};
+
+const SIGN_ALG = {
+  rsa: { name: "RSASSA-PKCS1-v1_5" },
+  ed25519: { name: "Ed25519" },
+};
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+function buildName(subject) {
+  const parts = [];
+  if (subject.countryName) parts.push(`C=${subject.countryName}`);
+  if (subject.stateOrProvinceName) parts.push(`ST=${subject.stateOrProvinceName}`);
+  if (subject.localityName) parts.push(`L=${subject.localityName}`);
+  if (subject.organizationName) parts.push(`O=${subject.organizationName}`);
+  if (subject.commonName) parts.push(`CN=${subject.commonName}`);
+  return parts.join(", ");
+}
+
+async function exportKeyPem(cryptoKey) {
+  const buf = await webcrypto.subtle.exportKey("pkcs8", cryptoKey);
+  const b64 = Buffer.from(buf).toString("base64").match(/.{1,64}/g).join("\n");
+  return `-----BEGIN PRIVATE KEY-----\n${b64}\n-----END PRIVATE KEY-----\n`;
+}
+
+async function importPrivateKey(pem, keyType) {
+  const b64 = pem.replace(/-----[^-]+-----/g, "").replace(/\s/g, "");
+  const buf = Buffer.from(b64, "base64");
+  return webcrypto.subtle.importKey("pkcs8", buf, ALG[keyType], true, ["sign"]);
+}
+
+async function importPublicKey(pem, keyType) {
+  const b64 = pem.replace(/-----[^-]+-----/g, "").replace(/\s/g, "");
+  const buf = Buffer.from(b64, "base64");
+  return webcrypto.subtle.importKey("spki", buf, ALG[keyType], true, ["verify"]);
+}
+
+// ---------------------------------------------------------------------------
+// initCA — generate a self-signed root CA certificate
+// ---------------------------------------------------------------------------
+async function initCA(subject, keyType = "rsa") {
+  const alg = ALG[keyType];
+  const keys = await webcrypto.subtle.generateKey(alg, true, ["sign", "verify"]);
 
   const now = new Date();
-  cert.validity.notBefore = now;
-  cert.validity.notAfter = new Date(
-    now.getFullYear() + 10,
-    now.getMonth(),
-    now.getDate()
-  );
+  // Backdate by 2 minutes to tolerate minor clock skew on verifying clients
+  const notBefore = new Date(now.getTime() - 2 * 60 * 1000);
+  const notAfter = new Date(now);
+  notAfter.setFullYear(notAfter.getFullYear() + 10);
 
-  const attrs = buildSubjectAttrs(subject);
-  cert.setSubject(attrs);
-  cert.setIssuer(attrs);
+  const cert = await x509.X509CertificateGenerator.createSelfSigned({
+    serialNumber: randomSerial(),
+    name: buildName(subject),
+    notBefore,
+    notAfter,
+    signingAlgorithm: SIGN_ALG[keyType],
+    keys,
+    extensions: [
+      new x509.BasicConstraintsExtension(true, undefined, true),
+      new x509.KeyUsagesExtension(
+        x509.KeyUsageFlags.keyCertSign | x509.KeyUsageFlags.cRLSign | x509.KeyUsageFlags.digitalSignature,
+        true
+      ),
+      await x509.SubjectKeyIdentifierExtension.create(keys.publicKey, false, webcrypto),
+    ],
+  });
 
-  cert.setExtensions([
-    {
-      name: "basicConstraints",
-      cA: true,
-      critical: true,
-    },
-    {
-      name: "keyUsage",
-      keyCertSign: true,
-      cRLSign: true,
-      critical: true,
-    },
-    {
-      name: "subjectKeyIdentifier",
-    },
-    {
-      name: "authorityKeyIdentifier",
-      keyIdentifier: true,
-    },
-  ]);
+  const keyPem = await exportKeyPem(keys.privateKey);
+  const certPem = cert.toString("pem");
 
-  // Self-sign
-  cert.sign(keys.privateKey, forge.md.sha256.create());
-
-  console.log("[CA] Root CA certificate created (valid until " + cert.validity.notAfter + ")");
-  return { key: keys.privateKey, cert };
+  console.log(`[CA] Root CA created (${keyType.toUpperCase()}, valid until ${notAfter.toISOString().slice(0, 10)})`);
+  return { certPem, keyPem, cert, keyType };
 }
 
-/**
- * Load a CA from existing PEM-encoded key and certificate.
- *
- * @param {string} keyPem - PEM-encoded private key
- * @param {string} certPem - PEM-encoded certificate
- * @returns {{ key: forge.pki.PrivateKey, cert: forge.pki.Certificate }}
- */
-function loadCA(keyPem, certPem) {
-  const key = forge.pki.privateKeyFromPem(keyPem);
-  const cert = forge.pki.certificateFromPem(certPem);
-  return { key, cert };
-}
-
-/**
- * Convert a subject object to an array of forge attribute objects.
- */
-function buildSubjectAttrs(subject) {
-  const attrs = [];
-  if (subject.commonName) {
-    attrs.push({ name: "commonName", value: subject.commonName });
-  }
-  if (subject.organizationName) {
-    attrs.push({ name: "organizationName", value: subject.organizationName });
-  }
-  if (subject.countryName) {
-    attrs.push({ name: "countryName", value: subject.countryName });
-  }
-  if (subject.stateOrProvinceName) {
-    attrs.push({ name: "stateOrProvinceName", value: subject.stateOrProvinceName });
-  }
-  if (subject.localityName) {
-    attrs.push({ name: "localityName", value: subject.localityName });
-  }
-  return attrs;
-}
-
-/**
- * Generate a random hex serial number (8 bytes).
- */
-function randomSerial() {
-  const bytes = forge.random.getBytesSync(8);
-  let hex = "";
-  for (let i = 0; i < bytes.length; i++) {
-    const b = bytes.charCodeAt(i).toString(16);
-    hex += b.length === 1 ? "0" + b : b;
-  }
-  return hex.toUpperCase();
-}
-
-module.exports = { initCA, loadCA };
+module.exports = { initCA, importPrivateKey, importPublicKey, exportKeyPem, buildName, ALG, SIGN_ALG, webcrypto };
