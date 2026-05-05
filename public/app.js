@@ -65,7 +65,7 @@ function showToast(message, type = "success") {
 // ---- API helpers ----
 const api = {
   async get(url) {
-    const r = await fetch(url);
+    const r = await fetch(url, { credentials: "include" });
     if (!r.ok) {
       const err = await r.json().catch(() => ({ error: r.statusText }));
       throw new Error(err.error || "Request failed");
@@ -73,7 +73,7 @@ const api = {
     return r.json();
   },
   async getText(url) {
-    const r = await fetch(url);
+    const r = await fetch(url, { credentials: "include" });
     if (!r.ok) {
       const err = await r.json().catch(() => ({ error: r.statusText }));
       throw new Error(err.error || "Request failed");
@@ -85,6 +85,7 @@ const api = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
+      credentials: "include",
     });
     if (!r.ok) {
       const err = await r.json().catch(() => ({ error: r.statusText }));
@@ -93,7 +94,7 @@ const api = {
     return r.json();
   },
   async del(url) {
-    const r = await fetch(url, { method: "DELETE" });
+    const r = await fetch(url, { method: "DELETE", credentials: "include" });
     if (!r.ok) {
       const err = await r.json().catch(() => ({ error: r.statusText }));
       throw new Error(err.error || "Request failed");
@@ -143,9 +144,7 @@ async function loadCAList() {
       item.className = "ca-item" + (currentCA === ca.name ? " active" : "");
       item.dataset.name = ca.name;
 
-      const subjectStr = ca.subject
-        ? ca.subject.map((s) => `${s.name}=${s.value}`).join(", ")
-        : "N/A";
+      const subjectStr = ca.subject || "N/A";
 
       const certCount = ca.certCount !== undefined ? ca.certCount : "";
 
@@ -179,9 +178,7 @@ async function selectCA(name) {
     el.textContent = ca.name;
     document.getElementById("downloadCaCert").href = `/api/ca/${name}/cert.pem`;
 
-    const subjectStr = ca.subject
-      ? ca.subject.map((s) => `${s.name}=${s.value}`).join(", ")
-      : "N/A";
+    const subjectStr = ca.subject || "N/A";
 
     document.getElementById("caMeta").innerHTML = `
       <p><strong>${t("subject")}</strong> ${escHtml(subjectStr)}</p>
@@ -637,7 +634,7 @@ function hideTooltip(e) {
 async function loadALL() {
   await loadCAList();
   if (currentCA) {
-    try { await loadCertList(currentCA); } catch {}
+    try { await selectCA(currentCA); } catch {}
   }
 }
 
@@ -710,23 +707,137 @@ document.getElementById("formModal").addEventListener("click", (e) => {
 // Init
 // ================================================================
 async function init() {
-  // Restore saved settings
   currentLang = localStorage.getItem("lang") || "zh";
   currentTheme = localStorage.getItem("theme") || "dark";
 
-  // Load i18n data before rendering
   await loadI18n();
-
   applyTheme();
   applyLang();
 
-  await loadCAList();
-
-  // Auto-select first CA
-  const items = document.querySelectorAll(".ca-item");
-  if (items.length > 0) {
-    selectCA(items[0].dataset.name);
+  let status;
+  try {
+    status = await api.get("/api/auth/status");
+  } catch (err) {
+    console.error("Failed to check auth status:", err);
+    status = { setupDone: false, loggedIn: false };
   }
+
+  if (!status.setupDone) {
+    showSetupPage();
+    return;
+  }
+
+  if (!status.loggedIn) {
+    showLoginPage();
+    return;
+  }
+
+  showApp(status.username);
 }
+
+function showSetupPage() {
+  document.getElementById("setupPage").classList.remove("hidden");
+  document.getElementById("loginPage").classList.add("hidden");
+  document.getElementById("app").classList.add("hidden");
+  document.querySelector('#setupForm button[type="submit"]').disabled = false;
+  applyLang();
+}
+
+function showLoginPage() {
+  document.getElementById("loginPage").classList.remove("hidden");
+  document.getElementById("setupPage").classList.add("hidden");
+  document.getElementById("app").classList.add("hidden");
+  document.querySelector('#loginForm button[type="submit"]').disabled = false;
+  applyLang();
+  document.getElementById("loginUsernameInput").focus();
+}
+
+function showApp(username) {
+  document.getElementById("setupPage").classList.add("hidden");
+  document.getElementById("loginPage").classList.add("hidden");
+  document.getElementById("app").classList.remove("hidden");
+  if (username) {
+    document.getElementById("navUsername").textContent = username;
+  }
+  loadCAList()
+    .then(() => {
+      const items = document.querySelectorAll(".ca-item");
+      if (items.length > 0) selectCA(items[0].dataset.name);
+    })
+    .catch((err) => {
+      console.error("Failed to load CA list:", err);
+      showToast("Failed to load CA list: " + err.message, "error");
+    });
+}
+
+// Setup form
+document.getElementById("setupForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const username = document.getElementById("setupUsernameInput").value.trim();
+  const password = document.getElementById("setupPasswordInput").value;
+  const confirm = document.getElementById("setupConfirmInput").value;
+  const btn = e.target.querySelector("button[type=submit]");
+
+  if (!username || username.length < 2 || username.length > 32) {
+    showToast(t("error") + ": Username must be 2–32 characters", "error");
+    return;
+  }
+  if (password !== confirm) {
+    showToast(t("setupPasswordMismatch"), "error");
+    return;
+  }
+  if (password.length < 8) {
+    showToast(t("setupPasswordShort"), "error");
+    return;
+  }
+
+  btn.disabled = true;
+  try {
+    await api.post("/api/auth/setup", { username, password });
+    document.getElementById("setupForm").reset();
+    showApp(username);
+  } catch (err) {
+    showToast(t("error") + ": " + err.message, "error");
+    btn.disabled = false;
+  }
+});
+
+// Login form
+document.getElementById("loginForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const username = document.getElementById("loginUsernameInput").value.trim();
+  const password = document.getElementById("loginPasswordInput").value;
+  const btn = e.target.querySelector("button[type=submit]");
+
+  if (!username || username.length < 2 || username.length > 32) {
+    showToast(t("error") + ": Username must be 2–32 characters", "error");
+    return;
+  }
+
+  btn.disabled = true;
+  try {
+    await api.post("/api/auth/login", { username, password });
+    document.getElementById("loginForm").reset();
+    showApp(username);
+  } catch (err) {
+    document.getElementById("loginPasswordInput").value = "";
+    showToast(t("error") + ": " + err.message, "error");
+    btn.disabled = false;
+  }
+});
+
+// Logout
+document.getElementById("logoutBtn").addEventListener("click", async () => {
+  const btn = document.getElementById("logoutBtn");
+  btn.disabled = true;
+  try {
+    await api.post("/api/auth/logout", {});
+    document.getElementById("navUsername").textContent = "";
+    showLoginPage();
+  } catch (err) {
+    showToast(t("error") + ": " + err.message, "error");
+    btn.disabled = false;
+  }
+});
 
 init();

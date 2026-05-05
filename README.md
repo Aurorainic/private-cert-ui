@@ -2,14 +2,16 @@
 
 ⚠️ ALL CODES BY AI
 
-[EN](README.md) | [中文](README_zh.md)
+**EN** | [中文](README_zh.md)
 
 ---
 
-A web-based Private Root Certificate Authority manager built with Node.js and Express. Data is stored in SQLite with AES-256-GCM encrypted private keys. Supports both RSA-4096 and Ed25519.
+A web-based Private Root Certificate Authority manager built with Node.js and Express. Data is stored in SQLite with AES-256-GCM encrypted private keys. Supports both RSA-4096 and Ed25519, with first-run admin signup and session-based login.
 
 ## Features
 
+- **Initial Admin Signup** — First visit creates the administrator account
+- **Session-based Login** — Protected UI and API access with `express-session`
 - **Root CA Generation** — Self-signed root CAs with RSA-4096 or Ed25519, valid for 10 years
 - **Certificate Signing** — End-entity certificates with independently selectable key types, configurable SANs (DNS names & IP addresses)
 - **Key Usage Control** — Server Auth or Client Auth extended key usage
@@ -125,7 +127,7 @@ private-cert-ui/
 
 - Intended for **development and internal use only**. Do not expose to untrusted networks.
 - Private keys are AES-256-GCM encrypted at rest, but the master key itself must be kept secure.
-- No authentication yet — a login system is planned.
+- **Authentication**: First visit requires admin signup. Subsequent access requires login with username/password. Sessions are httpOnly cookies with 8-hour max age.
 
 ## License
 
