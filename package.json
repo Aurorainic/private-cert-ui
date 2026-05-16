@@ -1,19 +1,36 @@
 {
   "name": "private-cert-ui",
-  "version": "1.0.0",
-  "description": "Private Root CA Manager - Web UI for managing a private certificate authority",
-  "main": "src/index.js",
+  "version": "2.0.0",
+  "description": "Private Root CA Manager - Nuxt Framework",
+  "type": "module",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
-    "start": "node src/index.js",
-    "dev": "node --watch src/index.js"
+    "dev": "nuxt dev",
+    "dev:server": "NODE_OPTIONS='-r reflect-metadata' nuxt dev",
+    "build": "nuxt build",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare"
   },
   "dependencies": {
-    "@peculiar/webcrypto": "^1.7.1",
-    "@peculiar/x509": "^2.0.0",
-    "bcrypt": "^6.0.0",
-    "better-sqlite3": "^12.9.0",
-    "express": "^4.18.0",
-    "express-session": "^1.19.0",
-    "reflect-metadata": "^0.2.2"
+    "@nuxt/icon": "^1.5.0",
+    "@nuxtjs/color-mode": "^3.4.0",
+    "@nuxtjs/i18n": "^9.0.0",
+    "@nuxtjs/tailwindcss": "^6.12.0",
+    "@peculiar/webcrypto": "^1.7.0",
+    "@peculiar/x509": "^1.11.0",
+    "@pinia/nuxt": "^0.5.3",
+    "nuxt": "^3.14.0",
+    "reflect-metadata": "^0.2.2",
+    "sql.js": "^1.12.0"
+  },
+  "devDependencies": {
+    "@types/sql.js": "^1.4.6",
+    "typescript": "^5.6.0"
+  },
+  "overrides": {
+    "cookie": "^0.7.1"
   }
 }

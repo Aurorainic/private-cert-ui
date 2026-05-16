@@ -6,12 +6,10 @@
 
 ---
 
-A web-based Private Root Certificate Authority manager built with Node.js and Express. Data is stored in SQLite with AES-256-GCM encrypted private keys. Supports both RSA-4096 and Ed25519, with first-run admin signup and session-based login.
+A web-based Private Root Certificate Authority manager built with Nuxt 3. Data is stored in SQLite with AES-256-GCM encrypted private keys. Supports both RSA-4096 and Ed25519.
 
 ## Features
 
-- **Initial Admin Signup** — First visit creates the administrator account
-- **Session-based Login** — Protected UI and API access with `express-session`
 - **Root CA Generation** — Self-signed root CAs with RSA-4096 or Ed25519, valid for 10 years
 - **Certificate Signing** — End-entity certificates with independently selectable key types, configurable SANs (DNS names & IP addresses)
 - **Key Usage Control** — Server Auth or Client Auth extended key usage
@@ -29,12 +27,18 @@ A web-based Private Root Certificate Authority manager built with Node.js and Ex
 ```bash
 git clone git@github.com:Aurorainic/private-cert-ui.git
 cd private-cert-ui
-git checkout dev
 npm install
-npm start
+npm run dev
 ```
 
 Starts on port 3000 by default. Open http://localhost:3000.
+
+To build for production:
+
+```bash
+npm run build
+npm run preview
+```
 
 ### Private Key Encryption
 
@@ -42,10 +46,10 @@ All private keys are AES-256-GCM encrypted before being written to the database.
 
 ```bash
 # On first run without CA_MASTER_KEY, one is generated and printed — save it
-CA_MASTER_KEY=<64-hex-chars> npm start
+CA_MASTER_KEY=<64-hex-chars> npm run dev
 
 # Custom port
-PORT=8080 CA_MASTER_KEY=<...> npm start
+PORT=8080 CA_MASTER_KEY=<...> npm run dev
 ```
 
 Without `CA_MASTER_KEY`, an ephemeral key is generated each run — the database file persists but private keys become unreadable after a restart.
@@ -81,14 +85,14 @@ Without `CA_MASTER_KEY`, an ephemeral key is generated each run — the database
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/api/ca/:name/certs` | List certificates under a CA |
-| `POST` | `/api/ca/:name/certs` | Sign a new certificate |
+| `GET` | `/api/cert/:ca/certs` | List certificates under a CA |
+| `POST` | `/api/cert/:ca/certs` | Sign a new certificate |
 | `GET` | `/api/cert/:ca/:serial` | Get certificate metadata |
 | `DELETE` | `/api/cert/:ca/:serial` | Delete a certificate |
 | `GET` | `/api/cert/:ca/:serial/cert.pem` | Download certificate PEM |
 | `GET` | `/api/cert/:ca/:serial/key.pem` | Download private key PEM |
 
-**POST /api/ca/:name/certs:**
+**POST /api/cert/:ca/certs:**
 
 ```json
 {
@@ -105,21 +109,31 @@ Without `CA_MASTER_KEY`, an ephemeral key is generated each run — the database
 
 ```
 private-cert-ui/
-├── src/
-│   ├── db.js        # SQLite init, AES-256-GCM helpers, randomSerial
-│   ├── ca.js        # initCA(subject, keyType)
-│   ├── cert.js      # signCert(caKeyPem, caCertPem, caKeyType, subject, options)
-│   ├── storage.js   # SQLite CRUD (saveCA / listCAs / loadCA / saveCert / …)
-│   ├── validate.js  # Path parameter validation
-│   └── index.js     # Express routes
+├── app.vue                 # Root component
+├── components/
+│   ├── ca/                # CA-related components
+│   ├── layout/            # Layout components (AppHeader)
+│   └── ui/                # UI components (Modal)
+├── pages/
+│   ├── index.vue          # Layout for /ca, /certs, /help
+│   └── index/             # Tab pages (ca.vue, certs.vue, help.vue)
+├── server/
+│   ├── api/               # API routes
+│   │   ├── ca/            # CA endpoints
+│   │   └── cert/          # Certificate endpoints
+│   ├── lib/               # Server utilities
+│   │   ├── crypto.ts      # Certificate signing logic
+│   │   ├── db.ts          # SQLite init & encryption
+│   │   └── storage.ts     # CRUD operations
+│   └── plugins/           # Nuxt plugins
+├── stores/
+│   ├── ca.ts              # CA state management
+│   └── cert.ts            # Certificate state management
 ├── public/
-│   ├── i18n/zh.json
-│   ├── i18n/en.json
-│   ├── index.html
-│   ├── style.css
-│   └── app.js
+│   └── locales/           # i18n files (zh.json, en.json)
 ├── data/
-│   └── ca.db        # SQLite database (gitignored, created on first run)
+│   └── ca.db              # SQLite database (gitignored)
+├── nuxt.config.ts         # Nuxt configuration
 └── package.json
 ```
 
@@ -127,7 +141,7 @@ private-cert-ui/
 
 - Intended for **development and internal use only**. Do not expose to untrusted networks.
 - Private keys are AES-256-GCM encrypted at rest, but the master key itself must be kept secure.
-- **Authentication**: First visit requires admin signup. Subsequent access requires login with username/password. Sessions are httpOnly cookies with 8-hour max age.
+- This application has no authentication — ensure it runs in a trusted environment or add authentication as needed.
 
 ## License
 
