@@ -58,6 +58,7 @@
   "helpTab": "帮助",
   "helpTitle": "帮助文档",
   "helpIntro": "帮助理解私密 CA 管理器中的核心概念。",
+  "redirectingToCA": "正在前往 CA 管理页面...",
   "helpWhatIsCA": "什么是证书颁发机构（CA）？",
   "helpWhatIsCADesc": "证书颁发机构（Certificate Authority）是负责签发和管理数字证书的可信实体。它验证证书申请者的身份，并用其私钥对证书进行数字签名，确保证书的真实性和完整性。",
   "helpWhatIsRootCA": "什么是根 CA？",
