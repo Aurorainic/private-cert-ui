@@ -26,12 +26,18 @@ export default defineNuxtConfig({
       { code: 'en', iso: 'en-US', name: 'English', file: 'en.json' }
     ],
     defaultLocale: 'zh',
-    lazy: true,
-    langDir: 'public/locales/',
+    lazy: false,
+    restructureDir: false,
+    langDir: 'locales',
     strategy: 'no_prefix',
     bundle: {
       optimizeTranslationDirective: false
     }
+  },
+
+  server: {
+    host: '127.0.0.1',
+    port: 3000
   },
 
   // Static files served by Nuxt
@@ -47,6 +53,12 @@ export default defineNuxtConfig({
     typeCheck: false,
     strict: false
   },
+
+  experimental: {
+    viteEnvironmentApi: true
+  },
+
+  compatibilityDate: '2026-05-16',
 
   nitro: {
     experimental: { wasm: true },

@@ -58,6 +58,7 @@
   "helpTab": "Help",
   "helpTitle": "Help Documentation",
   "helpIntro": "Understand core concepts behind Private CA Manager.",
+  "redirectingToCA": "Redirecting to CA management...",
   "helpWhatIsCA": "What is a Certificate Authority (CA)?",
   "helpWhatIsCADesc": "A Certificate Authority (CA) is a trusted entity that issues and manages digital certificates. It verifies the identity of certificate applicants and digitally signs certificates with its private key.",
   "helpWhatIsRootCA": "What is a Root CA?",
