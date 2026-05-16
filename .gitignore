@@ -5,3 +5,8 @@ PLAN.md
 opencode-prompt.txt
 *.prompt.txt
 CLAUDE.md
+.nuxt/
+.output/
+.nitro/
+dist/
+.DS_Store

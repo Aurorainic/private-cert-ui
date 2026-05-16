@@ -6,12 +6,10 @@
 
 ---
 
-基于 Node.js + Express 的私密根证书颁发机构 Web 管理器。数据存储在 SQLite，私钥 AES-256-GCM 加密，支持 RSA-4096 和 Ed25519 两种密钥类型。首次访问需创建管理员账号，后续通过账密登录访问。
+基于 Nuxt 3 的私密根证书颁发机构 Web 管理器。数据存储在 SQLite，私钥 AES-256-GCM 加密，支持 RSA-4096 和 Ed25519 两种密钥类型。
 
 ## 功能
 
-- **初始管理员注册** — 首次访问创建管理员账号
-- **会话登录** — 基于 `express-session` 的受保护 UI 和 API 访问
 - **根 CA 生成** — 自签名根 CA，可选 RSA-4096（10 年有效期）或 Ed25519
 - **证书签发** — 终端证书，CA 密钥类型与叶证书密钥类型独立可选，支持 SAN（DNS 名称 & IP 地址）
 - **密钥用途** — Server Auth / Client Auth 扩展密钥用途
@@ -29,12 +27,18 @@
 ```bash
 git clone git@github.com:Aurorainic/private-cert-ui.git
 cd private-cert-ui
-git checkout dev
 npm install
-npm start
+npm run dev
 ```
 
 默认监听 3000 端口，打开 http://localhost:3000 即可使用。
+
+生产环境构建：
+
+```bash
+npm run build
+npm run preview
+```
 
 ### 私钥加密密钥
 
@@ -42,10 +46,10 @@ npm start
 
 ```bash
 # 首次启动时若未设置，会自动生成并打印到控制台，请保存
-CA_MASTER_KEY=<64位十六进制> npm start
+CA_MASTER_KEY=<64位十六进制> npm run dev
 
 # 自定义端口
-PORT=8080 CA_MASTER_KEY=<...> npm start
+PORT=8080 CA_MASTER_KEY=<...> npm run dev
 ```
 
 未设置 `CA_MASTER_KEY` 时，每次启动生成临时密钥——数据库文件保留，但重启后私钥无法解密。
@@ -81,14 +85,14 @@ PORT=8080 CA_MASTER_KEY=<...> npm start
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| `GET` | `/api/ca/:name/certs` | 列出 CA 下所有证书 |
-| `POST` | `/api/ca/:name/certs` | 签发新证书 |
+| `GET` | `/api/cert/:ca/certs` | 列出 CA 下所有证书 |
+| `POST` | `/api/cert/:ca/certs` | 签发新证书 |
 | `GET` | `/api/cert/:ca/:serial` | 获取证书元数据 |
 | `DELETE` | `/api/cert/:ca/:serial` | 删除证书 |
 | `GET` | `/api/cert/:ca/:serial/cert.pem` | 下载证书 PEM |
 | `GET` | `/api/cert/:ca/:serial/key.pem` | 下载私钥 PEM |
 
-**POST /api/ca/:name/certs**：
+**POST /api/cert/:ca/certs**：
 
 ```json
 {
@@ -105,21 +109,31 @@ PORT=8080 CA_MASTER_KEY=<...> npm start
 
 ```
 private-cert-ui/
-├── src/
-│   ├── db.js        # SQLite 初始化、AES-256-GCM 加密工具、randomSerial
-│   ├── ca.js        # initCA(subject, keyType)
-│   ├── cert.js      # signCert(caKeyPem, caCertPem, caKeyType, subject, options)
-│   ├── storage.js   # SQLite CRUD（saveCA / listCAs / loadCA / saveCert / …）
-│   ├── validate.js  # 路径参数校验
-│   └── index.js     # Express 路由
+├── app.vue                 # 根组件
+├── components/
+│   ├── ca/                # CA 相关组件
+│   ├── layout/            # 布局组件 (AppHeader)
+│   └── ui/                # UI 组件 (Modal)
+├── pages/
+│   ├── index.vue          # /ca、/certs、/help 的布局
+│   └── index/             # 标签页 (ca.vue, certs.vue, help.vue)
+├── server/
+│   ├── api/               # API 路由
+│   │   ├── ca/            # CA 端点
+│   │   └── cert/          # 证书端点
+│   ├── lib/               # 服务器工具
+│   │   ├── crypto.ts      # 证书签名逻辑
+│   │   ├── db.ts          # SQLite 初始化 & 加密
+│   │   └── storage.ts     # CRUD 操作
+│   └── plugins/           # Nuxt 插件
+├── stores/
+│   ├── ca.ts              # CA 状态管理
+│   └── cert.ts            # 证书状态管理
 ├── public/
-│   ├── i18n/zh.json
-│   ├── i18n/en.json
-│   ├── index.html
-│   ├── style.css
-│   └── app.js
+│   └── locales/           # i18n 文件 (zh.json, en.json)
 ├── data/
-│   └── ca.db        # SQLite 数据库（gitignored，首次运行自动创建）
+│   └── ca.db              # SQLite 数据库（gitignored）
+├── nuxt.config.ts         # Nuxt 配置
 └── package.json
 ```
 
@@ -127,7 +141,7 @@ private-cert-ui/
 
 - 本工具仅用于**开发与内部环境**，请勿暴露到不可信网络。
 - 私钥以 AES-256-GCM 加密存储，但主密钥本身需要妥善保管。
-- **身份认证**：首次访问需创建管理员账号。后续访问需用户名/密码登录。会话采用 httpOnly Cookie，最长有效期 8 小时。
+- 本应用无身份验证功能——请确保在可信环境中运行，或按需添加身份验证。
 
 ## 许可
 

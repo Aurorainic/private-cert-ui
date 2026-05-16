@@ -1,0 +1,44 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 主题变量 */
+:root {
+  --bg: #f5f6fa;
+  --card: #ffffff;
+  --text: #2c3e50;
+  --textMuted: #7f8c9b;
+  --textDim: #b0bec5;
+  --border: #dce1e8;
+  --accent: #d4e0f0;
+  --activeBg: #fce8ec;
+}
+
+.dark {
+  --bg: #1a1a2e;
+  --card: #16213e;
+  --text: #e0e0e0;
+  --textMuted: #8899aa;
+  --textDim: #5a6a7a;
+  --border: #2a2a4a;
+  --accent: #0f3460;
+  --activeBg: #2a1a30;
+}
+
+/* 滚动条 */
+::-webkit-scrollbar {
+  width: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent);
+}
